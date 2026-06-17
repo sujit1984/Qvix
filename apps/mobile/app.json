@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Qvix",
+    "slug": "qvix",
+    "scheme": "qvix",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.qvix.app"
+    },
+    "android": {
+      "package": "com.qvix.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Qvix to access your camera to record response clips.",
+          "microphonePermission": "Allow Qvix to access your microphone for video audio."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
