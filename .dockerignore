@@ -1,0 +1,30 @@
+# Git and editor
+.git
+.gitignore
+.vscode
+.idea
+
+# Dependencies
+node_modules
+**/node_modules
+
+# Build artifacts
+.turbo
+.next
+dist
+build
+coverage
+
+# Env files
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Logs
+*.log
+logs
+
+# Misc
+.DS_Store
+Qvix/.git
