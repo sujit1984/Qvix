@@ -17,7 +17,7 @@ export function PulseTrigger({ onTap, onHold }: PulseTriggerProps) {
 
   const startPress = useCallback(() => {
     didFire.current = false;
-    setIsHolding(false);
+    setIsHolding(true);
     timerRef.current = setTimeout(() => {
       didFire.current = true;
       setIsHolding(false);

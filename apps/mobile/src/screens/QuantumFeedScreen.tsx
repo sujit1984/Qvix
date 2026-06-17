@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,13 @@ import {
   Dimensions,
   Pressable,
   Animated,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
   Gesture,
   GestureDetector,
@@ -52,9 +55,133 @@ export function QuantumFeedScreen() {
   const translateY = useSharedValue(0);
   const rotateY = useSharedValue(0);
   const warpOpacity = useSharedValue(0);
+  const cameraRef = useRef<CameraView | null>(null);
 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdFired = useRef(false);
+  const [permission, requestPermission] = useCameraPermissions();
+  const [showRecorder, setShowRecorder] = useState(false);
+  const [recordAsWarpDrop, setRecordAsWarpDrop] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordedUri, setRecordedUri] = useState<string | null>(null);
+  const [description, setDescription] = useState('');
+  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
+  const [uploadMessage, setUploadMessage] = useState<string>('');
+
+  const openRecorder = async (asWarpDrop: boolean) => {
+    const granted = permission?.granted ?? false;
+    if (!granted) {
+      const req = await requestPermission();
+      if (!req.granted) {
+        setUploadState('error');
+        setUploadMessage('Camera permission is required for Pulse recording.');
+        return;
+      }
+    }
+
+    setRecordAsWarpDrop(asWarpDrop);
+    setRecordedUri(null);
+    setDescription('');
+    setUploadState('idle');
+    setUploadMessage('');
+    setShowRecorder(true);
+  };
+
+  const closeRecorder = () => {
+    if (isRecording) {
+      cameraRef.current?.stopRecording();
+    }
+    setIsRecording(false);
+    setShowRecorder(false);
+  };
+
+  const startRecording = async () => {
+    if (!cameraRef.current || isRecording) return;
+
+    try {
+      setUploadState('idle');
+      setUploadMessage('Recording...');
+      setIsRecording(true);
+
+      const result = await cameraRef.current.recordAsync({
+        maxDuration: 30,
+      });
+
+      if (result?.uri) {
+        setRecordedUri(result.uri);
+        setUploadMessage('Recording captured.');
+      }
+    } catch {
+      setUploadState('error');
+      setUploadMessage('Failed to record video.');
+    } finally {
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (!cameraRef.current || !isRecording) return;
+    cameraRef.current.stopRecording();
+  };
+
+  const uploadRecording = async () => {
+    if (!recordedUri) return;
+
+    const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+    const authToken = process.env.EXPO_PUBLIC_QVIX_AUTH_TOKEN;
+
+    if (!apiUrl) {
+      setUploadState('error');
+      setUploadMessage('EXPO_PUBLIC_API_URL is not configured.');
+      return;
+    }
+
+    if (!authToken) {
+      setUploadState('error');
+      setUploadMessage('EXPO_PUBLIC_QVIX_AUTH_TOKEN is required for upload auth.');
+      return;
+    }
+
+    const form = new FormData();
+    form.append(
+      'file',
+      {
+        uri: recordedUri,
+        name: `pulse-${Date.now()}.mp4`,
+        type: 'video/mp4',
+      } as any
+    );
+    form.append('description', description.trim() || 'Recorded with mobile Pulse Trigger');
+    form.append('trendTitle', activeVideo?.trendTitle ?? 'PulseTrigger');
+    form.append('isWarpDrop', String(recordAsWarpDrop));
+
+    try {
+      setUploadState('uploading');
+      setUploadMessage('Uploading Pulse clip...');
+
+      const res = await fetch(`${apiUrl}/api/upload/video`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: form,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message ?? 'Upload failed');
+      }
+
+      setUploadState('done');
+      setUploadMessage('Upload accepted. Processing started.');
+      setTimeout(() => {
+        setShowRecorder(false);
+      }, 700);
+    } catch (err) {
+      setUploadState('error');
+      setUploadMessage(err instanceof Error ? err.message : 'Upload failed');
+    }
+  };
 
   const onSwipeVertical = (dy: number) => {
     if (dy < -SWIPE_THRESHOLD) {
@@ -109,7 +236,7 @@ export function QuantumFeedScreen() {
 
   const onPulseTap = () => {
     Haptics.selectionAsync();
-    // Camera module entry point placeholder
+    openRecorder(false);
   };
 
   const onPulseHoldStart = () => {
@@ -117,6 +244,7 @@ export function QuantumFeedScreen() {
     holdTimer.current = setTimeout(() => {
       holdFired.current = true;
       triggerWarp();
+      openRecorder(true);
       warpOpacity.value = withTiming(1, { duration: 180 }, () => {
         warpOpacity.value = withTiming(0, { duration: 800 }, () => {
           runOnJS(resetWarp)();
@@ -231,6 +359,84 @@ export function QuantumFeedScreen() {
       </View>
 
       {isWarpActive && <View style={styles.warpPulse} />}
+
+      {showRecorder && (
+        <View style={styles.recorderOverlay}>
+          <View style={styles.recorderCard}>
+            <View style={styles.recorderHeader}>
+              <Text style={styles.recorderTitle}>
+                {recordAsWarpDrop ? 'Warp Drop Capture' : 'Pulse Recorder'}
+              </Text>
+              <Pressable onPress={closeRecorder} style={styles.closeRecorderBtn}>
+                <Text style={styles.closeRecorderText}>✕</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.cameraPreviewWrap}>
+              {recordedUri ? (
+                <Video
+                  source={{ uri: recordedUri }}
+                  style={styles.cameraPreview}
+                  resizeMode={ResizeMode.COVER}
+                  shouldPlay
+                  isLooping
+                />
+              ) : (
+                <CameraView
+                  ref={cameraRef}
+                  style={styles.cameraPreview}
+                  facing="front"
+                  mode="video"
+                  mute={false}
+                />
+              )}
+            </View>
+
+            <TextInput
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Add a caption"
+              placeholderTextColor="rgba(185,185,214,0.8)"
+              style={styles.captionInput}
+            />
+
+            <View style={styles.recorderActions}>
+              <Pressable
+                style={[styles.recorderBtn, !recordedUri ? styles.recorderBtnPrimary : null]}
+                onPress={startRecording}
+                disabled={isRecording || !!recordedUri}
+              >
+                <Text style={styles.recorderBtnText}>Record</Text>
+              </Pressable>
+              <Pressable
+                style={styles.recorderBtn}
+                onPress={stopRecording}
+                disabled={!isRecording}
+              >
+                <Text style={styles.recorderBtnText}>Stop</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.recorderBtn, styles.recorderBtnPrimary]}
+                onPress={uploadRecording}
+                disabled={!recordedUri || uploadState === 'uploading'}
+              >
+                <Text style={styles.recorderBtnText}>
+                  {uploadState === 'uploading' ? 'Uploading...' : 'Upload'}
+                </Text>
+              </Pressable>
+            </View>
+
+            {uploadMessage ? (
+              <View style={styles.statusRow}>
+                {uploadState === 'uploading' && (
+                  <ActivityIndicator size="small" color={colors.warp} />
+                )}
+                <Text style={styles.statusText}>{uploadMessage}</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -435,5 +641,102 @@ const styles = StyleSheet.create({
     borderRadius: width * 0.15,
     backgroundColor: 'rgba(0,212,255,0.25)',
     zIndex: 41,
+  },
+  recorderOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 70,
+    backgroundColor: 'rgba(0,0,0,0.86)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  recorderCard: {
+    width: '100%',
+    maxWidth: 460,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(16,16,24,0.96)',
+    padding: 12,
+    gap: 10,
+  },
+  recorderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  recorderTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  closeRecorderBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  closeRecorderText: {
+    color: colors.muted,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  cameraPreviewWrap: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    height: 320,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: '#000',
+  },
+  cameraPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  captionInput: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    color: colors.text,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+  },
+  recorderActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  recorderBtn: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  recorderBtnPrimary: {
+    borderColor: 'rgba(0,212,255,0.5)',
+    backgroundColor: 'rgba(0,212,255,0.15)',
+  },
+  recorderBtnText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusText: {
+    color: colors.muted,
+    fontSize: 12,
   },
 });

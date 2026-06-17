@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue, PanInfo } from 'framer-motion';
 import { VideoCard } from './VideoCard';
 import { WarpDropOverlay } from './WarpDropOverlay';
+import { PulseRecorderModal } from './PulseRecorderModal';
 import { useQuantumFeed } from '@/hooks/useQuantumFeed';
 import { useVideoStore } from '@/store/videoStore';
 import type { FeedVideo } from '@qvix/shared';
@@ -16,6 +17,8 @@ export function QuantumFeed() {
   const [swipeDir, setSwipeDir] = useState<SwipeDirection>(null);
   const [variantIndex, setVariantIndex] = useState(0);
   const [showCreatorProfile, setShowCreatorProfile] = useState(false);
+  const [isPulseRecorderOpen, setPulseRecorderOpen] = useState(false);
+  const [recordAsWarpDrop, setRecordAsWarpDrop] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragY = useMotionValue(0);
   const dragX = useMotionValue(0);
@@ -121,12 +124,29 @@ export function QuantumFeed() {
               isActive
               variantIndex={variantIndex}
               totalVariants={(currentVideo.variants?.length ?? 0) + 1}
-              onPulseTriggerTap={() => {/* camera module */}}
-              onPulseTriggerHold={() => setWarpActive(true)}
+              onPulseTriggerTap={() => {
+                setRecordAsWarpDrop(false);
+                setPulseRecorderOpen(true);
+              }}
+              onPulseTriggerHold={() => {
+                setWarpActive(true);
+                setRecordAsWarpDrop(true);
+                setPulseRecorderOpen(true);
+              }}
             />
           </motion.div>
         )}
       </AnimatePresence>
+
+      <PulseRecorderModal
+        open={isPulseRecorderOpen}
+        isWarpDrop={recordAsWarpDrop}
+        trendTitle={currentVideo?.trendTitle}
+        onClose={() => {
+          setPulseRecorderOpen(false);
+          setRecordAsWarpDrop(false);
+        }}
+      />
 
       {/* Warp Drop Overlay */}
       <AnimatePresence>
