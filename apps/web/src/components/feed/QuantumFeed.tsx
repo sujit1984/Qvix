@@ -222,10 +222,10 @@ function SwipeHints({ variantCount }: { variantCount: number }) {
     <div className="absolute inset-0 pointer-events-none z-10">
       {variantCount > 1 && (
         <>
-          <div className="absolute left-2 top-1/2 -translate-y-1/2 text-qvix-warp/40 text-xs">
+          <div className="absolute left-2 bottom-44 text-qvix-warp/50 text-xs">
             ◄ ALT
           </div>
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 text-qvix-warp/40 text-xs">
+          <div className="absolute right-2 bottom-44 text-qvix-warp/50 text-xs">
             NEXT ►
           </div>
         </>
