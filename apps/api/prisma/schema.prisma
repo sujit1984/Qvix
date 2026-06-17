@@ -32,6 +32,7 @@ model User {
   videos         Video[]
   comments       Comment[]
   likes          Like[]
+  watches        VideoWatch[]
   followers      Follow[]  @relation("followers")
   following      Follow[]  @relation("following")
 
@@ -82,6 +83,7 @@ model Video {
 
   comments        Comment[]
   likes           Like[]
+  watches         VideoWatch[]
 
   @@index([creatorId])
   @@index([audioTrackId])
@@ -90,6 +92,21 @@ model Video {
   @@index([status])
   @@index([viewsCount(sort: Desc)])
   @@index([createdAt(sort: Desc)])
+}
+
+model VideoWatch {
+  id             String   @id @default(uuid())
+  userId         String
+  videoId        String
+  watchedSeconds Int
+  completionRate Float
+  createdAt      DateTime @default(now())
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video          Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([videoId, createdAt(sort: Desc)])
 }
 
 model Comment {

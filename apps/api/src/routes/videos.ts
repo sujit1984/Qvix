@@ -43,6 +43,54 @@ export async function videoRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { liked: true } });
   });
 
+  // POST /api/videos/:id/watch  — requires auth
+  app.post('/:id/watch', { onRequest: [(app as any).authenticate] }, async (request, reply) => {
+    const params = paramsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ success: false, message: 'Invalid video ID' });
+
+    const body = z
+      .object({
+        watchedSeconds: z.coerce.number().min(0).max(60 * 60),
+        completed: z.boolean().optional(),
+      })
+      .safeParse(request.body);
+
+    if (!body.success) {
+      return reply.code(400).send({ success: false, message: body.error.issues[0]?.message ?? 'Invalid payload' });
+    }
+
+    const userId = ((request as any).user as { sub: string }).sub;
+
+    const video = await prisma.video.findUnique({
+      where: { id: params.data.id },
+      select: { id: true, durationSeconds: true, status: true },
+    });
+
+    if (!video || video.status !== 'published') {
+      return reply.code(404).send({ success: false, message: 'Video not found' });
+    }
+
+    const duration = Math.max(video.durationSeconds ?? 1, 1);
+    const completionRate = Math.max(
+      0,
+      Math.min(
+        1,
+        body.data.completed ? 1 : body.data.watchedSeconds / duration
+      )
+    );
+
+    await prisma.videoWatch.create({
+      data: {
+        userId,
+        videoId: video.id,
+        watchedSeconds: Math.round(body.data.watchedSeconds),
+        completionRate,
+      },
+    });
+
+    return reply.send({ success: true });
+  });
+
   // GET /api/videos/:id/comments
   app.get('/:id/comments', async (request, reply) => {
     const params = paramsSchema.safeParse(request.params);
